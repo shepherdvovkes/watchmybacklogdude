@@ -1,22 +1,48 @@
 // static/app.js
 document.addEventListener('DOMContentLoaded', () => {
 
-    // --- Мокап логина ---
+    // --- Логика аутентификации ---
     const loginOverlay = document.getElementById('login-overlay');
     const mainContent = document.getElementById('main-content');
     const loginForm = document.getElementById('login-form');
     const logoutButton = document.getElementById('logout-button');
 
-    // При успешном "логине" показываем основной контент
-    loginForm.addEventListener('submit', (e) => {
+    async function checkAuth() {
+        const res = await fetch('/auth/status');
+        const data = await res.json();
+        if (data.authenticated) {
+            loginOverlay.style.display = 'none';
+            mainContent.style.display = 'block';
+            connectWebSocket();
+        } else {
+            loginOverlay.style.display = 'flex';
+            mainContent.style.display = 'none';
+        }
+    }
+    checkAuth();
+
+    // Логин
+    loginForm.addEventListener('submit', async (e) => {
         e.preventDefault();
-        loginOverlay.style.display = 'none';
-        mainContent.style.display = 'block';
-        connectWebSocket();
+        const email = document.getElementById('email').value;
+        const password = document.getElementById('password').value;
+        const res = await fetch('/auth/login', {
+            method: 'POST',
+            headers: { 'Content-Type': 'application/json' },
+            body: JSON.stringify({ email, password })
+        });
+        if (res.ok) {
+            loginOverlay.style.display = 'none';
+            mainContent.style.display = 'block';
+            connectWebSocket();
+        } else {
+            alert('Неверные учётные данные');
+        }
     });
-    
+
     // "Разлогин"
-    logoutButton.addEventListener('click', () => {
+    logoutButton.addEventListener('click', async () => {
+        await fetch('/auth/logout', { method: 'POST' });
         loginOverlay.style.display = 'flex';
         mainContent.style.display = 'none';
         if (window.socket) {
