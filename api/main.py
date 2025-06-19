@@ -13,6 +13,8 @@ from dotenv import load_dotenv
 from fastapi import FastAPI, Request, WebSocket, WebSocketDisconnect, Depends
 from fastapi.staticfiles import StaticFiles
 from fastapi.templating import Jinja2Templates
+from fastapi.responses import JSONResponse
+from starlette.middleware.sessions import SessionMiddleware
 from openai import AsyncOpenAI
 from sentence_transformers import SentenceTransformer
 from prometheus_client import Counter, start_http_server, Gauge
@@ -32,6 +34,10 @@ openai_client = AsyncOpenAI(api_key=OPENAI_API_KEY)
 
 # --- 1. Настройка FastAPI и статических файлов ---
 app = FastAPI(title="WatchMyBacklogDude Security Analyzer")
+SECRET_KEY = os.getenv("SECRET_KEY", "change_me")
+LOGIN_EMAIL = os.getenv("LOGIN_EMAIL", "admin@example.com")
+LOGIN_PASSWORD = os.getenv("LOGIN_PASSWORD", "password")
+app.add_middleware(SessionMiddleware, secret_key=SECRET_KEY, max_age=60*60*8)
 app.mount("/static", StaticFiles(directory="static"), name="static")
 templates = Jinja2Templates(directory="templates")
 
@@ -52,6 +58,27 @@ class ConnectionManager:
             await connection.send_json(message)
 
 manager = ConnectionManager()
+
+# --- 2a. Простая аутентификация на базе сессий ---
+def get_current_user(request: Request):
+    return request.session.get("user")
+
+@app.post("/auth/login")
+async def login(request: Request):
+    data = await request.json()
+    if data.get("email") == LOGIN_EMAIL and data.get("password") == LOGIN_PASSWORD:
+        request.session["user"] = LOGIN_EMAIL
+        return {"success": True}
+    return JSONResponse({"success": False}, status_code=401)
+
+@app.post("/auth/logout")
+async def logout(request: Request):
+    request.session.pop("user", None)
+    return {"success": True}
+
+@app.get("/auth/status")
+async def auth_status(request: Request):
+    return {"authenticated": get_current_user(request) is not None}
 
 # --- 3. Настройка моделей AI и базы векторов (RAG) ---
 print("Загрузка AI моделей и базы векторов...")
@@ -204,12 +231,16 @@ async def startup_event():
 
 @app.get("/")
 async def get_home(request: Request):
-    # Здесь должна быть логика проверки аутентификации.
-    # Для мокапа просто отдаем страницу.
-    return templates.TemplateResponse("index.html", {"request": request})
+    return templates.TemplateResponse(
+        "index.html",
+        {"request": request, "authenticated": get_current_user(request) is not None},
+    )
     
 @app.websocket("/ws/logs")
 async def websocket_endpoint(websocket: WebSocket):
+    if not websocket.session.get("user"):
+        await websocket.close(code=1008)
+        return
     await manager.connect(websocket)
     CURRENT_WEBSOCKETS.inc()
     print(f"Новое WebSocket соединение. Всего: {len(manager.active_connections)}")
