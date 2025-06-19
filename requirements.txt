@@ -1,0 +1,11 @@
+fastapi
+uvicorn[standard]
+python-dotenv
+sentence-transformers
+faiss-cpu
+numpy
+openai
+requests
+prometheus-client
+aiofiles
+jinja2

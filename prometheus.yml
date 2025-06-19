@@ -1,0 +1,9 @@
+global:
+  scrape_interval: 15s
+
+scrape_configs:
+  - job_name: 'log_processor'
+    static_configs:
+      # Важно: если python-скрипт запущен на хосте macOS, а прометеус в докере,
+      # используйте специальный DNS 'host.docker.internal'
+      - targets: ['host.docker.internal:8000']
